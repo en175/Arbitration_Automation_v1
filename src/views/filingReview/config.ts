@@ -61,3 +61,20 @@ export interface VerifyFieldMeta {
   status: 'match' | 'risk' | 'missing';
   note: string;
 }
+
+export interface EvidenceAnchor {
+  sourceName: string;
+  page: number;
+  anchor: string;
+  snippet: string;
+}
+
+export interface RuleCheckItem {
+  id: string;
+  title: string;
+  level: 'high' | 'medium' | 'low';
+  result: 'hit' | 'pass';
+  formula: string;
+  conclusion: string;
+  relatedFields: string[];
+}

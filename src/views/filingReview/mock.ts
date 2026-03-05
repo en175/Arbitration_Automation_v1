@@ -1,13 +1,13 @@
-import type { FilingIssueGroup, VerifyFieldMeta } from './config';
+import type { EvidenceAnchor, FilingIssueGroup, RuleCheckItem, VerifyFieldMeta } from './config';
 
 export const mockMaterials = [
-  { id: 'f1', title: '仲裁申请书', status: 'normal', required: true, tip: '已提交原件扫描，签章完整' },
-  { id: 'f2', title: '申请人身份证明', status: 'normal', required: true, tip: '营业执照与法定代表人信息一致' },
-  { id: 'f3', title: '被申请人身份信息', status: 'missing', required: true },
-  { id: 'f4', title: '仲裁协议/条款', status: 'normal', required: true, tip: '合同第12条约定提交北京仲裁委员会' },
-  { id: 'f5', title: '证据清单', status: 'normal', required: false, tip: '共10项证据，含银行流水与发货单' },
-  { id: 'f6', title: '授权委托书', status: 'normal', required: false, tip: '授权事项包含立案与和解权限' },
-  { id: 'f7', title: '发票开具与寄送凭证', status: 'missing', required: false }
+  { id: 'f1', title: '仲裁申请书', fileType: 'PDF', status: 'normal', required: true, tip: '已提交原件扫描，签章完整' },
+  { id: 'f2', title: '申请人身份证明', fileType: 'PDF', status: 'normal', required: true, tip: '营业执照与法定代表人信息一致' },
+  { id: 'f3', title: '被申请人身份信息', fileType: 'PDF', status: 'missing', required: true },
+  { id: 'f4', title: '仲裁协议/条款', fileType: 'PDF', status: 'normal', required: true, tip: '合同第12条约定提交北京仲裁委员会' },
+  { id: 'f5', title: '证据清单', fileType: 'XLSX', status: 'normal', required: false, tip: '共10项证据，含银行流水与发货单' },
+  { id: 'f6', title: '授权委托书', fileType: 'PDF', status: 'normal', required: false, tip: '授权事项包含立案与和解权限' },
+  { id: 'f7', title: '发票开具与寄送凭证', fileType: 'JPG', status: 'missing', required: false }
 ];
 
 export const mockVerifyData = {
@@ -150,3 +150,66 @@ export const mockVerifyFieldMeta: Record<string, VerifyFieldMeta> = {
   contactPerson: { status: 'match', note: '代理人信息完整' },
   contactPhone: { status: 'match', note: '联系电话格式正确' }
 };
+
+export const mockEvidenceAnchors: Record<string, EvidenceAnchor> = {
+  amount: {
+    sourceName: '证据汇总表',
+    page: 5,
+    anchor: '证据汇总-金额统计段',
+    snippet: '证据汇总显示应付货款合计为 1,180,000.00 元，与申请书主张金额存在 20,000 元差异。'
+  },
+  interestStartDate: {
+    sourceName: '申请书事实部分',
+    page: 3,
+    anchor: '事实与理由-利息主张段',
+    snippet: '申请人主张自 2024/01/11 起计算利息，但违约事实描述为 2024/01/10 后持续逾期。'
+  },
+  respondentCreditCode: {
+    sourceName: '工商信息截图',
+    page: 2,
+    anchor: '主体信息-统一社会信用代码',
+    snippet: '截图中统一社会信用代码末位与录入值不一致，建议按原件复核后统一。'
+  },
+  contact: {
+    sourceName: '合同首页',
+    page: 4,
+    anchor: '合同信息-送达地址',
+    snippet: '合同记载地址为“101号A座”，申请书填写为“101号”，存在后缀差异。'
+  },
+  clauseValid: {
+    sourceName: '购销合同',
+    page: 6,
+    anchor: '争议解决条款',
+    snippet: '仲裁条款约定明确，但签署页印章边缘模糊，建议补充清晰扫描件。'
+  }
+};
+
+export const mockRuleChecks: RuleCheckItem[] = [
+  {
+    id: 'r1',
+    title: '金额口径一致性校验',
+    level: 'high',
+    result: 'hit',
+    formula: '申请书金额(1,200,000) - 证据汇总金额(1,180,000) = 20,000',
+    conclusion: '金额差异 20,000 元，超过容差阈值 1,000 元，触发高风险。',
+    relatedFields: ['amount']
+  },
+  {
+    id: 'r2',
+    title: '利息起算日逻辑校验',
+    level: 'medium',
+    result: 'hit',
+    formula: '利息起算日(2024/01/11) > 首次违约日(2024/01/10)',
+    conclusion: '时间顺序满足“起算日晚于违约日”，但需补充违约起算依据材料。',
+    relatedFields: ['interestStartDate', 'defaultDate']
+  },
+  {
+    id: 'r3',
+    title: '统一社会信用代码校验',
+    level: 'high',
+    result: 'hit',
+    formula: '18位代码校验位计算结果 ≠ 当前录入末位',
+    conclusion: '被申请人代码疑似录入错误，建议按最新工商信息回填。',
+    relatedFields: ['respondentCreditCode']
+  }
+];

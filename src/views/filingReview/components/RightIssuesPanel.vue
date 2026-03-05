@@ -1,14 +1,16 @@
 <template>
   <div class="right-panel">
-    <div class="panel-header">审核操作</div>
+    <div class="panel-header panel-header-themed">
+      <span class="module-title">审核操作</span>
+    </div>
     <div class="panel-content">
-      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
+      <div class="action-row">
         <button class="wb-btn wb-btn-primary" @click="handleApprove">通过立案</button>
         <button class="wb-btn" @click="$emit('return')">退回补正</button>
         <button class="wb-btn">暂存</button>
       </div>
 
-      <div class="panel-header" style="padding: 12px 0; border-bottom: 1px solid var(--color-divider); margin-bottom: 12px;">
+      <div class="issues-header">
         问题清单
       </div>
       <div class="summary-bar">
@@ -76,10 +78,29 @@ const handleApprove = () => {
 </script>
 
 <style scoped>
+.action-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.action-row .wb-btn {
+  white-space: nowrap;
+  padding-left: 0;
+  padding-right: 0;
+}
 .summary-bar {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+.issues-header {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-divider);
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-title);
 }
 .summary-chip {
   font-size: 12px;
