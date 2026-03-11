@@ -24,7 +24,7 @@
 当前项目状态：
 - 立案审核（/filing-review）：✅ 已完成深度优化
 - 智能阅卷（/dossier-reading）：✅ 已完成深度优化
-- 文书写作助手（/doc-writer）：✅ 已完成深度优化
+- 文书写作助手（/doc-writer）：✅ 已完成两轮深度优化（模块导航+手风琴面板+脚注引用+AI模块感知+校对侧标+Word导入导出+Toast+自动保存）
 - 文书审核（/doc-review）：🔲 基础骨架，待深度优化
 
 启动命令：npm run dev → http://localhost:5173/

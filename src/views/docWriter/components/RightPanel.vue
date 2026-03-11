@@ -10,57 +10,68 @@
         :aria-selected="currentTab === tab.key"
         :tabindex="currentTab === tab.key ? 0 : -1"
         @click="currentTab = tab.key"
-      >
-        {{ tab.label }}
-      </div>
+      >{{ tab.label }}</div>
     </div>
     
     <div class="panel-content">
       <!-- AI 写作助手 -->
       <div v-if="currentTab === 'ai'" style="display: flex; flex-direction: column; height: 100%;">
+        <!-- 当前编辑模块提示 -->
+        <div v-if="currentSectionLabel" class="section-context-bar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          当前编辑：<strong>{{ currentSectionLabel }}</strong>
+        </div>
+
         <div class="preset-area">
-          <div class="preset-title">快捷任务</div>
+          <div class="preset-title">
+            {{ sectionPresets.length > 0 ? '推荐任务' : '快捷任务' }}
+          </div>
           <div class="preset-grid">
             <button
-              v-for="item in aiPresetActions"
+              v-for="item in displayPresets"
               :key="item.key"
               type="button"
               class="preset-card"
-              :class="{ active: activePresetKey === item.key }"
+              :class="{ active: activePresetKey === item.key, recommended: sectionPresetKeys.has(item.key) }"
               @click="activePresetKey = item.key"
             >
-              <div class="preset-label">{{ item.label }}</div>
+              <div class="preset-label">
+                {{ item.label }}
+                <span v-if="sectionPresetKeys.has(item.key)" class="rec-dot"></span>
+              </div>
               <div class="preset-desc">{{ item.desc }}</div>
             </button>
           </div>
-          <div class="option-row">
+          <div v-if="currentPresetOptions.length > 0" class="option-row">
             <button
               v-for="option in currentPresetOptions"
               :key="option.key"
               type="button"
               class="option-chip"
               @click="emit('ai-preset-select', { actionKey: activePresetKey, optionKey: option.key, actionLabel: activePresetLabel, optionLabel: option.label })"
-            >
-              {{ option.label }}
+            >{{ option.label }}</button>
+          </div>
+          <div v-else-if="activePresetKey" class="option-row">
+            <button type="button" class="option-chip primary-chip" @click="emit('ai-preset-select', { actionKey: activePresetKey, optionKey: '_default', actionLabel: activePresetLabel, optionLabel: '执行' })">
+              执行此任务
             </button>
           </div>
         </div>
+
         <div style="flex: 1; overflow-y: auto; padding-bottom: 12px;">
           <div v-for="msg in aiMsgs" :key="msg.id" style="margin-bottom: 12px; display: flex;" :style="{ justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }">
             <div 
-              style="max-width: 80%; padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5;"
+              style="max-width: 85%; padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.6;"
               :style="{ 
                 background: msg.role === 'user' ? 'var(--color-primary)' : '#F2F3F5',
                 color: msg.role === 'user' ? '#fff' : 'var(--color-text-body)'
               }"
-            >
-              {{ msg.content }}
-            </div>
+            >{{ msg.content }}</div>
           </div>
         </div>
       </div>
 
-      <!-- 核对检查 -->
+      <!-- 校对检查 -->
       <div v-if="currentTab === 'check'">
         <div v-for="group in checkGroups" :key="group.id" style="margin-bottom: 12px;">
           <div class="group-title">{{ group.title }}</div>
@@ -68,10 +79,14 @@
             v-for="issue in group.items"
             :key="issue.id"
             class="wb-card check-card"
+            :class="{ 'severity-error': issue.severity === 'error' }"
             @click="emit('locate-paragraph', issue.paragraphId)"
           >
             <div class="check-head">
-              <span class="check-type">{{ checkTypeText(issue.type) }}</span>
+              <span class="check-type">
+                <span class="severity-dot" :class="issue.severity || 'warning'"></span>
+                {{ checkTypeText(issue.type) }}
+              </span>
               <span v-if="issue.paragraphLabel" class="check-anchor">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                 {{ issue.paragraphLabel }}
@@ -92,9 +107,7 @@
             class="filter-chip"
             :class="{ active: commentFilter === item.key }"
             @click="commentFilter = item.key"
-          >
-            {{ item.label }}
-          </button>
+          >{{ item.label }}</button>
         </div>
 
         <div v-if="filteredComments.length === 0" class="empty-state">
@@ -109,13 +122,11 @@
           :class="{ active: activeCommentId === comment.id, editing: editingCommentId === comment.id }"
           @click="handleCommentClick(comment)"
         >
-          <!-- 选中的原文引用 -->
           <div v-if="comment.selectedText" class="comment-quote">
             <div class="quote-bar"></div>
             <div class="quote-text">{{ comment.selectedText }}</div>
           </div>
 
-          <!-- 编辑态 -->
           <div v-if="editingCommentId === comment.id" class="comment-edit-area">
             <textarea
               ref="editTextareaRef"
@@ -132,7 +143,6 @@
             </div>
           </div>
 
-          <!-- 展示态 -->
           <div v-else>
             <div class="comment-body">{{ comment.content || '暂无批注内容' }}</div>
             <div class="comment-meta-row">
@@ -147,7 +157,6 @@
             </div>
           </div>
 
-          <!-- 操作栏（hover 显示） -->
           <div v-if="editingCommentId !== comment.id" class="comment-action-bar">
             <button class="action-icon-btn" title="编辑" @click.stop="startEdit(comment)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="M15 5l4 4"/></svg>
@@ -166,8 +175,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, nextTick } from 'vue';
-import { COMMENT_FILTERS, WRITER_TABS } from '../config';
+import { computed, ref, nextTick, watch } from 'vue';
+import { COMMENT_FILTERS, WRITER_TABS, DOC_SECTIONS, SECTION_AI_PRESETS, SECTION_AI_OPTIONS, AI_COMMON_ACTIONS, AI_PRESET_OPTIONS } from '../config';
 
 interface CommentItem {
   id: string;
@@ -186,22 +195,19 @@ interface CheckItem {
   desc: string;
   paragraphId: string;
   paragraphLabel?: string;
+  severity?: string;
 }
 
 const props = defineProps<{
   aiMsgs: Array<{ id: string; role: string; content: string }>;
-  aiPresetActions: Array<{ key: string; label: string; desc: string }>;
-  aiPresetOptions: Record<string, Array<{ key: string; label: string }>>;
   checkGroups: Array<{ id: string; title: string; items: CheckItem[] }>;
   comments: CommentItem[];
+  currentSection?: string;
 }>();
 
 const emit = defineEmits<{
   (event: 'locate-paragraph', paragraphId: string): void;
-  (
-    event: 'ai-preset-select',
-    payload: { actionKey: string; optionKey: string; actionLabel: string; optionLabel: string }
-  ): void;
+  (event: 'ai-preset-select', payload: { actionKey: string; optionKey: string; actionLabel: string; optionLabel: string }): void;
   (event: 'update-comment', comment: CommentItem): void;
   (event: 'delete-comment', commentId: string): void;
 }>();
@@ -210,13 +216,52 @@ const currentTab = ref('ai');
 const tabs = WRITER_TABS;
 const commentFilters = COMMENT_FILTERS;
 const commentFilter = ref('all');
-const activePresetKey = ref(props.aiPresetActions[0]?.key || 'focus');
 const activeCommentId = ref('');
 
-const currentPresetOptions = computed(() => props.aiPresetOptions[activePresetKey.value] || []);
-const activePresetLabel = computed(
-  () => props.aiPresetActions.find((item) => item.key === activePresetKey.value)?.label || '快捷任务'
-);
+/* 模块感知 */
+const currentSectionLabel = computed(() => {
+  if (!props.currentSection) return '';
+  const sec = DOC_SECTIONS.find(s => s.key === props.currentSection);
+  return sec ? sec.label : '';
+});
+
+const sectionPresets = computed(() => {
+  if (!props.currentSection) return [];
+  return SECTION_AI_PRESETS[props.currentSection] || [];
+});
+
+const sectionPresetKeys = computed(() => new Set(sectionPresets.value.map(p => p.key)));
+
+const displayPresets = computed(() => {
+  if (sectionPresets.value.length > 0) {
+    const sectionKeys = new Set(sectionPresets.value.map(p => p.key));
+    const common = AI_COMMON_ACTIONS.filter(a => !sectionKeys.has(a.key));
+    return [...sectionPresets.value, ...common];
+  }
+  return AI_COMMON_ACTIONS;
+});
+
+const activePresetKey = ref(displayPresets.value[0]?.key || 'focus');
+
+watch(displayPresets, (presets) => {
+  if (presets.length > 0 && !presets.find(p => p.key === activePresetKey.value)) {
+    activePresetKey.value = presets[0].key;
+  }
+});
+
+const currentPresetOptions = computed(() => {
+  const section = props.currentSection || '';
+  const sectionOpts = SECTION_AI_OPTIONS[section];
+  if (sectionOpts && sectionOpts[activePresetKey.value]) {
+    return sectionOpts[activePresetKey.value];
+  }
+  return AI_PRESET_OPTIONS[activePresetKey.value] || [];
+});
+
+const activePresetLabel = computed(() => {
+  const item = displayPresets.value.find(p => p.key === activePresetKey.value);
+  return item ? item.label : '快捷任务';
+});
 
 const checkTypeText = (value: string) => {
   if (value === 'format') return '格式';
@@ -227,7 +272,7 @@ const checkTypeText = (value: string) => {
 
 const filteredComments = computed(() => {
   if (commentFilter.value === 'all') return props.comments;
-  return props.comments.filter((item) => item.status === commentFilter.value);
+  return props.comments.filter(item => item.status === commentFilter.value);
 });
 
 const editingCommentId = ref('');
@@ -236,24 +281,18 @@ const editTextareaRef = ref<HTMLTextAreaElement[] | null>(null);
 
 const handleCommentClick = (comment: CommentItem) => {
   activeCommentId.value = comment.id;
-  if (comment.paragraphId) {
-    emit('locate-paragraph', comment.paragraphId);
-  }
+  if (comment.paragraphId) emit('locate-paragraph', comment.paragraphId);
 };
 
 const startEdit = (comment: CommentItem) => {
   editingCommentId.value = comment.id;
   editingContent.value = comment.content;
   nextTick(() => {
-    if (editTextareaRef.value && editTextareaRef.value[0]) {
-      editTextareaRef.value[0].focus();
-    }
+    if (editTextareaRef.value && editTextareaRef.value[0]) editTextareaRef.value[0].focus();
   });
 };
 
-const cancelEdit = () => {
-  editingCommentId.value = '';
-};
+const cancelEdit = () => { editingCommentId.value = ''; };
 
 const saveEdit = (comment: CommentItem) => {
   emit('update-comment', { ...comment, content: editingContent.value });
@@ -268,19 +307,14 @@ const deleteComment = (comment: CommentItem) => {
   emit('delete-comment', comment.id);
 };
 
-const focusNewCommentId = ref('');
-
 const switchToCommentAndEdit = (commentId: string) => {
   currentTab.value = 'comment';
-  focusNewCommentId.value = commentId;
   editingCommentId.value = commentId;
-  const target = props.comments.find((c) => c.id === commentId);
+  const target = props.comments.find(c => c.id === commentId);
   editingContent.value = target?.content || '';
   activeCommentId.value = commentId;
   nextTick(() => {
-    if (editTextareaRef.value && editTextareaRef.value[0]) {
-      editTextareaRef.value[0].focus();
-    }
+    if (editTextareaRef.value && editTextareaRef.value[0]) editTextareaRef.value[0].focus();
   });
 };
 
@@ -288,6 +322,22 @@ defineExpose({ switchToCommentAndEdit });
 </script>
 
 <style scoped>
+.section-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: #f0f4ff;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--color-primary);
+  border: 1px solid #d5def8;
+}
+.section-context-bar strong {
+  font-weight: 600;
+}
+
 .group-title {
   font-size: 12px;
   color: var(--color-text-sub);
@@ -317,14 +367,28 @@ defineExpose({ switchToCommentAndEdit });
   border-radius: 8px;
   padding: 8px;
   cursor: pointer;
+  transition: all 0.15s;
 }
 .preset-card.active {
   border-color: #b9ccff;
   background: #f5f8ff;
 }
+.preset-card.recommended {
+  border-color: #93c5fd;
+}
 .preset-label {
   font-size: 13px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rec-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  flex-shrink: 0;
 }
 .preset-desc {
   margin-top: 4px;
@@ -344,10 +408,21 @@ defineExpose({ switchToCommentAndEdit });
   padding: 4px 10px;
   font-size: 12px;
   cursor: pointer;
+  transition: all 0.15s;
 }
 .option-chip:hover {
   border-color: #b9ccff;
   background: #eef3ff;
+}
+.primary-chip {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+.primary-chip:hover {
+  opacity: 0.9;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 /* Check cards */
@@ -357,6 +432,9 @@ defineExpose({ switchToCommentAndEdit });
   border-left: 4px solid var(--color-warning);
   cursor: pointer;
   transition: background 0.15s;
+}
+.check-card.severity-error {
+  border-left-color: #EF4444;
 }
 .check-card:hover {
   background: #fafbff;
@@ -370,7 +448,17 @@ defineExpose({ switchToCommentAndEdit });
 .check-type {
   font-size: 12px;
   color: var(--color-text-sub);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
+.severity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.severity-dot.error { background: #EF4444; }
+.severity-dot.warning { background: #F59E0B; }
 .check-anchor {
   display: inline-flex;
   align-items: center;
@@ -403,7 +491,6 @@ defineExpose({ switchToCommentAndEdit });
   color: var(--color-primary);
   background: #eff6ff;
 }
-
 .empty-state {
   text-align: center;
   color: var(--color-text-sub);
@@ -411,7 +498,7 @@ defineExpose({ switchToCommentAndEdit });
   font-size: 13px;
 }
 
-/* Comment card - feishu-style */
+/* Comment card */
 .comment-card {
   position: relative;
   border: 1px solid var(--color-divider);
@@ -434,7 +521,6 @@ defineExpose({ switchToCommentAndEdit });
   border-color: var(--color-primary);
   box-shadow: 0 0 0 1px var(--color-primary);
 }
-
 .comment-quote {
   display: flex;
   gap: 8px;
@@ -458,13 +544,11 @@ defineExpose({ switchToCommentAndEdit });
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-
 .comment-body {
   font-size: 13px;
   line-height: 1.6;
   color: var(--color-text-body);
 }
-
 .comment-meta-row {
   display: flex;
   justify-content: space-between;
@@ -489,16 +573,11 @@ defineExpose({ switchToCommentAndEdit });
 }
 .comment-status-dot.pending { background: #F59E0B; }
 .comment-status-dot.resolved { background: #10B981; }
-.comment-status-text {
-  font-size: 11px;
-}
+.comment-status-text { font-size: 11px; }
 .comment-status-text.pending { color: #b45309; }
 .comment-status-text.resolved { color: #15803d; }
 
-/* Edit area */
-.comment-edit-area {
-  margin-top: 4px;
-}
+.comment-edit-area { margin-top: 4px; }
 .comment-edit-input {
   width: 100%;
   padding: 8px 10px;
@@ -536,14 +615,9 @@ defineExpose({ switchToCommentAndEdit });
   color: #fff;
   border-color: var(--color-primary);
 }
-.edit-btn.cancel:hover {
-  background: #f5f5f5;
-}
-.edit-btn.save:hover {
-  opacity: 0.9;
-}
+.edit-btn.cancel:hover { background: #f5f5f5; }
+.edit-btn.save:hover { opacity: 0.9; }
 
-/* Hover action bar */
 .comment-action-bar {
   position: absolute;
   top: 8px;
@@ -556,9 +630,7 @@ defineExpose({ switchToCommentAndEdit });
   padding: 2px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
-.comment-card:hover .comment-action-bar {
-  display: flex;
-}
+.comment-card:hover .comment-action-bar { display: flex; }
 .action-icon-btn {
   display: flex;
   align-items: center;
@@ -572,16 +644,7 @@ defineExpose({ switchToCommentAndEdit });
   color: var(--color-text-sub);
   transition: all 0.15s;
 }
-.action-icon-btn:hover {
-  background: #f0f4ff;
-  color: var(--color-primary);
-}
-.action-icon-btn.delete-btn:hover {
-  background: #fef2f2;
-  color: #EF4444;
-}
-.action-icon-btn.resolve-btn:hover {
-  background: #ecfdf5;
-  color: #10B981;
-}
+.action-icon-btn:hover { background: #f0f4ff; color: var(--color-primary); }
+.action-icon-btn.delete-btn:hover { background: #fef2f2; color: #EF4444; }
+.action-icon-btn.resolve-btn:hover { background: #ecfdf5; color: #10B981; }
 </style>

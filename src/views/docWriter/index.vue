@@ -7,15 +7,19 @@
     <EditorArea 
       ref="editorRef"
       v-model="content" 
+      :sections="docSections"
+      :check-paragraph-ids="checkParagraphMarkers"
       @selection-change="handleSelectionChange"
+      @section-change="handleSectionChange"
+      @import-word="handleImportWord"
+      @export-word="handleExportWord"
     />
     <RightPanel
       ref="rightPanelRef"
       :aiMsgs="aiMsgs"
-      :aiPresetActions="aiPresetActions"
-      :aiPresetOptions="aiPresetOptions"
       :checkGroups="checkGroups"
       :comments="comments"
+      :currentSection="currentSection"
       @locate-paragraph="handleLocateParagraph"
       @ai-preset-select="handleAiPresetSelect"
       @update-comment="handleUpdateComment"
@@ -23,7 +27,6 @@
       @delete-comment="handleDeleteComment"
     />
 
-    <!-- AI 交互组件 -->
     <FloatingSelectionToolbar 
       :visible="toolbarVisible" 
       :position="toolbarPosition"
@@ -47,42 +50,61 @@
       @copy="handleCopyResult"
       @replace="handleReplaceResult"
     />
+
+    <!-- Word import hidden input -->
+    <input
+      ref="wordFileInput"
+      type="file"
+      accept=".docx,.doc"
+      style="display: none"
+      @change="handleWordFileSelected"
+    />
+
+    <ToastMessage
+      :message="toastMsg"
+      :type="toastType"
+      :show="toastShow"
+      @update:show="toastShow = $event"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import LeftMaterialPanel from './components/LeftMaterialPanel.vue';
 import EditorArea from '@/components/editor/EditorArea.vue';
 import RightPanel from './components/RightPanel.vue';
 import FloatingSelectionToolbar from './components/FloatingSelectionToolbar.vue';
 import AiWritePopover from './components/AiWritePopover.vue';
 import CandidateResultCard from './components/CandidateResultCard.vue';
+import ToastMessage from '@/components/ToastMessage.vue';
+import { DOC_SECTIONS } from './config';
 
 import {
   getMockCandidate,
   getPresetReply,
   mockAiMsgs,
-  mockAiPresetActions,
-  mockAiPresetOptions,
   mockCheckGroups,
   mockComments,
   mockEditorContent,
   mockMaterials
 } from './mock';
 
-const materials = mockMaterials;
+const materials = ref(JSON.parse(JSON.stringify(mockMaterials)));
 const aiMsgs = ref([...mockAiMsgs]);
-const aiPresetActions = mockAiPresetActions;
-const aiPresetOptions = mockAiPresetOptions;
 const checkGroups = mockCheckGroups;
 const comments = ref([...mockComments]);
-
 const content = ref(mockEditorContent);
+const docSections = DOC_SECTIONS;
 
-// State
+const currentSection = ref('');
+const footnotes = ref([]);
+let footnoteCounter = 0;
+
 const editorRef = ref(null);
 const rightPanelRef = ref(null);
+const wordFileInput = ref(null);
+
 const toolbarVisible = ref(false);
 const toolbarPosition = ref({ top: 0, left: 0 });
 const popoverVisible = ref(false);
@@ -92,173 +114,58 @@ const resultPosition = ref({ top: 0, left: 0 });
 const candidateText = ref('');
 const currentSelectionRange = ref(null);
 
-// Handlers
+/* Toast */
+const toastShow = ref(false);
+const toastMsg = ref('');
+const toastType = ref('success');
+const showToast = (msg, type = 'success') => {
+  toastMsg.value = msg;
+  toastType.value = type;
+  toastShow.value = true;
+};
+
+/* 校对检查段落标记 */
+const checkParagraphMarkers = computed(() => {
+  const markers = [];
+  for (const group of checkGroups) {
+    for (const item of group.items) {
+      markers.push({ paragraphId: item.paragraphId, severity: item.severity || 'warning' });
+    }
+  }
+  return markers;
+});
+
+/* Section change */
+const handleSectionChange = (sectionKey) => {
+  currentSection.value = sectionKey;
+};
+
+/* Selection */
 const handleSelectionChange = ({ range, position }) => {
-  // Hide all panels when selection changes (except if interacting with them, handled by @mousedown.stop)
   if (!range || range.empty) {
     toolbarVisible.value = false;
     popoverVisible.value = false;
-    // Keep result visible if it exists, until explicit close or new action
     return;
   }
-
-  // Update selection range
   currentSelectionRange.value = range;
-
-  // Only show toolbar if it wasn't already visible or if selection changed significantly
-  // But here we just update position and ensure visibility
-  // Calculate position relative to viewport
-  // Note: EditorArea needs to emit viewport coordinates
-  toolbarPosition.value = {
-    top: position.top - 50, // Above selection
-    left: position.left
-  };
+  toolbarPosition.value = { top: position.top - 50, left: position.left };
   toolbarVisible.value = true;
-  // Don't hide popover if already open, unless selection changes drastically? 
-  // For now, let's keep popover separate. If toolbar shows, maybe we don't auto-hide popover?
-  // User requirement: "选中文本后，功能栏固定在页面上，点击非工具栏的其他区域/未选中文本时工具栏才消失。"
-  // This implies persistence.
-  
-  // popoverVisible.value = false; // Hide popover if new selection - actually maybe we want to keep it if refining?
-  // Let's stick to standard behavior: new selection -> new toolbar context -> hide old popover
   popoverVisible.value = false;
 };
 
 const handleGlobalClick = (event) => {
-  // Check if click is inside toolbar or popover or result card
-  // But since we use @mousedown.stop on those components, this event handler only fires for clicks OUTSIDE them.
-  // EXCEPT: The click event might propagate from editor content wrapper if not stopped.
-  // However, handleSelectionChange fires on selection change. 
-  
-  // If we click on the editor text to change cursor (without selection), handleSelectionChange will fire with empty range
-  // which hides the toolbar.
-  
-  // If we click blank area in three-column-layout (outside editor text area but inside layout),
-  // we should hide toolbar if selection is lost or just generally hide it.
-  
-  // But wait, if selection persists (e.g. user clicked but selection didn't clear? Unlikely in standard browser behavior),
-  // usually click clears selection.
-  
-  // The user says: "点击非工具栏的其他区域/未选中文本时工具栏才消失"
-  // If selection is cleared (empty range), handleSelectionChange already handles hiding.
-  // If selection remains (e.g. maybe right click? or interaction with other inputs that don't clear selection?),
-  // we should be careful.
-  
-  // With @mousedown.stop on toolbar/popover, clicks there won't reach here.
-  // So any click reaching here is "outside".
-  
-  // We need to be careful not to hide if the click was actually part of a selection operation (drag select).
-  // But handleSelectionChange handles the selection logic.
-  
-  // If user clicks "outside" (e.g. empty gray area), selection might be lost or not.
-  // If selection is NOT lost (e.g. user clicked a button in another panel that doesn't clear focus?), 
-  // we might still want to hide? 
-  
-  // Actually, standard behavior:
-  // 1. Select text -> Toolbar shows.
-  // 2. Click empty space -> Selection cleared -> Toolbar hides (via handleSelectionChange).
-  // 3. Click toolbar -> Selection preserved (mousedown.stop) -> Toolbar stays.
-  
-  // The user requirement "选中文本后，功能栏固定在页面上" implies it shouldn't disappear automatically 
-  // unless explicitly dismissed or selection lost.
-  
-  // Current logic in handleSelectionChange:
-  // if (!range || range.empty) { toolbarVisible.value = false; ... }
-  // This covers "未选中文本时工具栏才消失".
-  
-  // "点击非工具栏的其他区域" -> Usually clears selection, so covered.
-  // But what if user clicks AI Popover? Popover is "part of toolbar interaction".
-  // Popover has @mousedown.stop, so click doesn't bubble here.
-  
-  // So, what if user clicks the "RightPanel"? 
-  // It might NOT clear editor selection if editor loses focus but selection remains?
-  // Tiptap/ProseMirror usually keeps selection unless clicked elsewhere.
-  
-  // Let's ensure toolbar doesn't auto-hide on simple mouseup if selection is still there.
-  // The current logic seems correct for "persistence": it's state-driven by `toolbarVisible`.
-  // It only becomes false if range is empty.
-  
-  // However, `handleGlobalClick` is triggered on @click on `.three-column-layout`.
-  // If I click on RightPanel, selection might remain in editor (blur event doesn't necessarily clear selection range object immediately or visually).
-  // If selection remains, we shouldn't hide toolbar?
-  // OR should we strictly hide it if clicking outside?
-  // "点击非工具栏的其他区域...工具栏才消失"
-  
-  // Let's strictly hide on global click, UNLESS it was a selection action.
-  // But click event happens after mouseup.
-  // If I select text, mouseup happens, click happens.
-  // If I drag select, click happens on release?
-  
-  // Wait, if I select text inside EditorArea, the click event bubbles to Layout.
-  // If we hide on global click, we hide immediately after selecting!
-  // We must stop propagation from EditorArea? 
-  // Or check if selection is non-empty?
-  
   if (!currentSelectionRange.value || currentSelectionRange.value.empty) {
-     toolbarVisible.value = false;
-     popoverVisible.value = false;
-  }
-  // If selection exists, we don't hide just because of a click, 
-  // UNLESS that click was meant to dismiss (like clicking empty space).
-  // But clicking empty space clears selection usually.
-  
-  // Issue: If I click "RightPanel" buttons, editor loses focus. 
-  // Does selection clear? Browser dependent.
-  // If selection clears, handleSelectionChange fires -> hides.
-  // If selection persists, do we want to hide?
-  // User says "点击非工具栏的其他区域...工具栏才消失".
-  // So yes, clicking RightPanel should probably hide it even if selection technically persists (e.g. inactive selection).
-  
-  // So:
-  // 1. Toolbar/Popover have @mousedown.stop -> clicks there don't bubble.
-  // 2. EditorArea -> We should probably @click.stop or similar? 
-  //    No, because we want clicks in editor to update selection/cursor.
-  // 3. Layout @click -> Hides toolbar.
-  
-  // BUT: Selecting text involves clicking/dragging in editor.
-  // If that bubbles to layout, it will hide toolbar immediately?
-  // We need to ensure we don't hide if the click resulted in a valid selection.
-  
-  // Let's modify handleGlobalClick to only hide if target is NOT editor?
-  // Or rely on selection state.
-  
-  // Actually, best way: 
-  // If user clicks anywhere that is NOT toolbar/popover, we hide.
-  // UNLESS it's the selection action itself.
-  
-  // If we rely on handleSelectionChange, it handles the "selection lost" case.
-  // The "click outside but selection remains" case (e.g. clicking a non-focusable div) needs handling.
-  
-  // Let's try:
-  // On Layout click:
-  // If click originated from Editor, we check selection.
-  // If selection is valid, KEEP toolbar.
-  // If selection empty, HIDE.
-  
-  // If click originated outside Editor (and outside toolbar/popover), HIDE.
-  
-  // To do this:
-  // Check event.target.closest('.editor-container')
-  
-  const isEditorClick = event.target.closest('.editor-container');
-  if (!isEditorClick) {
-    // Clicked outside editor (and outside toolbar/popover due to stopPropagation)
     toolbarVisible.value = false;
     popoverVisible.value = false;
-  } else {
-    // Clicked inside editor
-    // handleSelectionChange will have fired if selection changed.
-    // If selection is valid, we keep it.
-    // If selection is empty, handleSelectionChange already hid it.
+  }
+  const isEditorClick = event.target.closest('.editor-container');
+  if (!isEditorClick) {
+    toolbarVisible.value = false;
+    popoverVisible.value = false;
   }
 };
 
-const openAiPopover = () => {
-  popoverPosition.value = { ...toolbarPosition.value };
-  toolbarVisible.value = false;
-  popoverVisible.value = true;
-};
-
+/* AI */
 const handleAiAction = (action) => {
   generateCandidate(action.key, action.label);
 };
@@ -270,7 +177,6 @@ const handleAiSend = (text) => {
 const generateCandidate = (type, prompt) => {
   popoverVisible.value = false;
   toolbarVisible.value = false;
-  
   setTimeout(() => {
     candidateText.value = getMockCandidate(type, prompt);
     resultPosition.value = { ...toolbarPosition.value, top: toolbarPosition.value.top + 20 };
@@ -278,24 +184,69 @@ const generateCandidate = (type, prompt) => {
   }, 500);
 };
 
-const buildEvidenceFootnote = (material, evidence) => {
-  return `（证据：${material.title}；主张：${evidence.claim}；摘录：${evidence.excerpt}）`;
-};
-
+/* 脚注式证据引用 */
 const handleQuoteEvidence = ({ material, evidence }) => {
   if (evidence.conflictLevel === 'high') {
-    alert(`当前证据存在高风险冲突：${evidence.conflictNote}，请先完成冲突处理后再入稿。`);
+    showToast(`当前证据存在高风险冲突：${evidence.conflictNote}，请先完成冲突处理后再入稿。`, 'error');
     return;
   }
-  if (!editorRef.value) {
-    return;
-  }
-  const quote = `${evidence.excerpt}${buildEvidenceFootnote(material, evidence)}`;
-  editorRef.value.replaceSelectionText(quote);
+  if (!editorRef.value) return;
+
+  footnoteCounter++;
+  const fnNum = footnoteCounter;
+  const fnId = `fn-${fnNum}`;
+
+  const footnoteRef = `<span class="footnote-ref" data-fn-id="${fnId}" title="${material.title}：${evidence.claim}">[证${fnNum}]</span>`;
+  editorRef.value.replaceSelectionText(evidence.excerpt + ' ' + footnoteRef);
+
+  footnotes.value.push({
+    id: fnId,
+    num: fnNum,
+    materialTitle: material.title,
+    claim: evidence.claim,
+    excerpt: evidence.excerpt
+  });
+
+  updateFootnoteSection();
+  markEvidenceQuoted(evidence.id);
+  showToast(`已引用「${evidence.claim}」并添加脚注 [证${fnNum}]`);
 };
 
+const markEvidenceQuoted = (evidenceId) => {
+  for (const mat of materials.value) {
+    for (const ev of mat.evidenceItems) {
+      if (ev.id === evidenceId) {
+        ev.quoted = true;
+        ev.quoteCount = (ev.quoteCount || 0) + 1;
+        return;
+      }
+    }
+  }
+};
+
+const updateFootnoteSection = () => {
+  if (!editorRef.value || footnotes.value.length === 0) return;
+
+  nextTick(() => {
+    const fnSectionEl = document.querySelector('.footnote-section');
+    if (fnSectionEl) fnSectionEl.remove();
+
+    let fnHtml = '<div class="footnote-section" data-paragraph-id="sec-footnotes">';
+    fnHtml += '<div class="footnote-title">证据引用注释</div>';
+    for (const fn of footnotes.value) {
+      fnHtml += `<div class="footnote-item" id="${fn.id}"><span class="fn-num">[证${fn.num}]</span>${fn.materialTitle}：${fn.claim} —— "${fn.excerpt}"</div>`;
+    }
+    fnHtml += '</div>';
+
+    const currentHtml = editorRef.value.getHTML();
+    const cleanedHtml = currentHtml.replace(/<div class="footnote-section"[\s\S]*?<\/div>\s*<\/div>/, '');
+    editorRef.value.setContent(cleanedHtml + fnHtml);
+  });
+};
+
+/* AI Preset */
 const handleAiPresetSelect = ({ actionKey, optionKey, actionLabel, optionLabel }) => {
-  const prompt = `预选任务：${actionLabel} / ${optionLabel}`;
+  const prompt = optionKey === '_default' ? `预选任务：${actionLabel}` : `预选任务：${actionLabel} / ${optionLabel}`;
   aiMsgs.value.push({ id: `u-${Date.now()}`, role: 'user', content: prompt });
   const reply = getPresetReply(actionKey, optionKey);
   aiMsgs.value.push({ id: `a-${Date.now()}`, role: 'ai', content: reply });
@@ -306,11 +257,10 @@ const handleLocateParagraph = (paragraphId) => {
   editorRef.value.scrollToParagraph(paragraphId);
 };
 
+/* Comments */
 const handleUpdateComment = (updated) => {
-  const idx = comments.value.findIndex((c) => c.id === updated.id);
-  if (idx !== -1) {
-    comments.value[idx] = { ...comments.value[idx], ...updated };
-  }
+  const idx = comments.value.findIndex(c => c.id === updated.id);
+  if (idx !== -1) comments.value[idx] = { ...comments.value[idx], ...updated };
 };
 
 const handleAddComment = (newItem) => {
@@ -318,7 +268,7 @@ const handleAddComment = (newItem) => {
 };
 
 const handleDeleteComment = (commentId) => {
-  comments.value = comments.value.filter((c) => c.id !== commentId);
+  comments.value = comments.value.filter(c => c.id !== commentId);
 };
 
 const handleToolbarAddComment = () => {
@@ -338,18 +288,16 @@ const handleToolbarAddComment = () => {
   comments.value.unshift(newItem);
   toolbarVisible.value = false;
   nextTick(() => {
-    if (rightPanelRef.value) {
-      rightPanelRef.value.switchToCommentAndEdit(newId);
-    }
+    if (rightPanelRef.value) rightPanelRef.value.switchToCommentAndEdit(newId);
   });
 };
 
 const handleCopyResult = async () => {
   try {
     await navigator.clipboard.writeText(candidateText.value);
-    alert('已复制到剪贴板');
+    showToast('已复制到剪贴板');
   } catch (err) {
-    console.error('Failed to copy', err);
+    showToast('复制失败，请手动复制', 'error');
   }
 };
 
@@ -357,6 +305,128 @@ const handleReplaceResult = () => {
   if (editorRef.value) {
     editorRef.value.replaceSelectionText(candidateText.value);
     resultVisible.value = false;
+    showToast('已替换选中文本');
+  }
+};
+
+/* Word Import */
+const handleImportWord = () => {
+  if (wordFileInput.value) wordFileInput.value.click();
+};
+
+const handleWordFileSelected = async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  showToast('正在导入文档...', 'info');
+
+  try {
+    const mammoth = await import('mammoth');
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.convertToHtml({ arrayBuffer });
+    let html = result.value;
+
+    html = autoTagSections(html);
+
+    if (editorRef.value) {
+      editorRef.value.setContent(html);
+      content.value = html;
+    }
+    showToast(`已导入「${file.name}」`);
+  } catch (err) {
+    console.error('Import failed:', err);
+    showToast('导入失败，请检查文件格式', 'error');
+  }
+
+  if (wordFileInput.value) wordFileInput.value.value = '';
+};
+
+const autoTagSections = (html) => {
+  const sectionMap = [
+    { pattern: /一[、．.]?\s*首部/, id: 'sec-header' },
+    { pattern: /二[、．.]?\s*仲裁请求/, id: 'sec-claims' },
+    { pattern: /三[、．.]?\s*案件事实/, id: 'sec-facts' },
+    { pattern: /四[、．.]?\s*(被申请人)?答辩/, id: 'sec-defense' },
+    { pattern: /五[、．.]?\s*仲裁庭查明/, id: 'sec-investigation' },
+    { pattern: /六[、．.]?\s*仲裁庭认为/, id: 'sec-analysis' },
+    { pattern: /七[、．.]?\s*裁决主文/, id: 'sec-ruling' }
+  ];
+
+  for (const sec of sectionMap) {
+    html = html.replace(
+      new RegExp(`(<h[12][^>]*)(>\\s*${sec.pattern.source})`),
+      `$1 data-paragraph-id="${sec.id}"$2`
+    );
+  }
+  return html;
+};
+
+/* Word Export */
+const handleExportWord = async () => {
+  if (!editorRef.value) return;
+
+  showToast('正在生成 Word 文档...', 'info');
+
+  try {
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = await import('docx');
+    const htmlContent = editorRef.value.getHTML();
+
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    const elements = tempDiv.querySelectorAll('h1, h2, h3, p');
+
+    const docParagraphs = [];
+    for (const el of elements) {
+      const text = el.textContent?.trim() || '';
+      if (!text) continue;
+
+      if (el.tagName === 'H1') {
+        docParagraphs.push(new Paragraph({
+          children: [new TextRun({ text, bold: true, size: 36, font: '仿宋' })],
+          heading: HeadingLevel.TITLE,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 400 }
+        }));
+      } else if (el.tagName === 'H2') {
+        docParagraphs.push(new Paragraph({
+          children: [new TextRun({ text, bold: true, size: 28, font: '黑体' })],
+          heading: HeadingLevel.HEADING_1,
+          spacing: { before: 300, after: 200 }
+        }));
+      } else {
+        const style = el.getAttribute('style') || '';
+        const alignment = style.includes('text-align: right') ? AlignmentType.RIGHT
+          : style.includes('text-align: center') ? AlignmentType.CENTER
+          : AlignmentType.JUSTIFIED;
+        const isBold = el.querySelector('strong') !== null;
+
+        docParagraphs.push(new Paragraph({
+          children: [new TextRun({ text, bold: isBold, size: 24, font: '仿宋' })],
+          alignment,
+          indent: alignment === AlignmentType.JUSTIFIED ? { firstLine: 480 } : undefined,
+          spacing: { line: 360 }
+        }));
+      }
+    }
+
+    const doc = new Document({
+      sections: [{
+        properties: { page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } } },
+        children: docParagraphs
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '裁决书.docx';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('裁决书已导出为 Word 文档');
+  } catch (err) {
+    console.error('Export failed:', err);
+    showToast('导出失败，请稍后重试', 'error');
   }
 };
 </script>

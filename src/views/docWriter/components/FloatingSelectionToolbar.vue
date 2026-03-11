@@ -6,7 +6,7 @@
     @mousedown.stop
   >
     <div 
-      v-for="action in actions" 
+      v-for="action in filteredActions" 
       :key="action.key"
       class="toolbar-item" 
       :style="{ '--hover-color': action.color }"
@@ -22,16 +22,11 @@
       </span>
       <span>批注</span>
     </div>
-    <div class="divider"></div>
-    <div class="toolbar-item more-btn">
-      <span class="icon">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-      </span>
-    </div>
   </div>
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { AI_ACTIONS } from '../config';
 
 defineProps({
@@ -43,7 +38,10 @@ defineProps({
 });
 
 const emit = defineEmits(['action', 'add-comment']);
-const actions = AI_ACTIONS;
+
+const filteredActions = computed(() =>
+  AI_ACTIONS.filter(a => !['translate', 'check'].includes(a.key))
+);
 
 const handleClick = (action) => {
   emit('action', action);
@@ -78,12 +76,10 @@ const handleClick = (action) => {
   height: 32px;
   line-height: 1;
 }
-
 .toolbar-item:hover {
   background: var(--color-bg-body);
   color: var(--hover-color);
 }
-
 .toolbar-item:active {
   transform: translateY(1px);
 }
@@ -106,15 +102,6 @@ const handleClick = (action) => {
   height: 20px;
   background: var(--color-divider);
   margin: 0 4px;
-}
-
-.more-btn {
-  padding: 6px;
-  color: var(--color-text-sub);
-}
-
-.more-btn:hover {
-  color: var(--color-text-body);
 }
 
 @keyframes fadeIn {

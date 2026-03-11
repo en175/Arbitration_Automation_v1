@@ -15,7 +15,7 @@
           v-model="inputValue"
           type="text" 
           class="ai-input" 
-          placeholder="告诉 AI 下一步应该如何？比如：帮我翻译成英语"
+          placeholder="告诉 AI 下一步应该如何？比如：帮我扩展这段论述"
           @keydown.enter="handleSend"
         />
         <button class="send-btn" @click="handleSend" :disabled="!inputValue">
