@@ -1,4 +1,4 @@
-<template>
+<title>仲裁智能化项目 v1</title><template>
   <div class="dossier-page">
     <div class="three-column-layout">
       <LeftMaterialPanel
