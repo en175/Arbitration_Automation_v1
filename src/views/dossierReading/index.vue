@@ -1,4 +1,4 @@
-<title>仲裁智能化项目 v1</title><template>
+<template>
   <div class="dossier-page">
     <div class="three-column-layout">
       <LeftMaterialPanel
@@ -23,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import type { RequestWorkbench } from './config';
 import LeftMaterialPanel from './components/LeftMaterialPanel.vue';
 import MainTabs from './components/MainTabs.vue';
@@ -66,6 +66,10 @@ watch(selectedRequestId, (requestId) => {
   if (nextTimeline) {
     activeTimelineId.value = nextTimeline.id;
   }
+});
+
+onMounted(() => {
+  document.title = '仲裁智能化项目 v1';
 });
 </script>
 
